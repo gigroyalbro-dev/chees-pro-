@@ -1,824 +1,557 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Chess } from 'chess.js';
-
-// الملف الكامل بلغة واحدة - Chess Master
-const ChessMaster = () => {
-  // === حالات التطبيق ===
-  const [currentView, setCurrentView] = useState('main'); // main, game, profile, training
-  const [user, setUser] = useState(null);
-  const [game, setGame] = useState(new Chess());
-  const [selectedSquare, setSelectedSquare] = useState(null);
-  const [possibleMoves, setPossibleMoves] = useState([]);
-  const [playerColor, setPlayerColor] = useState('white');
-  const [gameMode, setGameMode] = useState('ai');
-  const [aiDifficulty, setAiDifficulty] = useState('medium');
-  const [gameHistory, setGameHistory] = useState([]);
-
-  // === تأثيرات ===
-  useEffect(() => {
-    // تحميل بيانات المستخدم من localStorage
-    const savedUser = localStorage.getItem('chessUser');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-  }, []);
-
-  // === دوال اللعبة ===
-  const handleSquareClick = (square) => {
-    if (game.isGameOver()) return;
-
-    const piece = game.get(square);
-
-    if (selectedSquare) {
-      try {
-        const move = game.move({
-          from: selectedSquare,
-          to: square,
-          promotion: 'q'
-        });
-
-        if (move) {
-          const newGame = new Chess(game.fen());
-          setGame(newGame);
-          setSelectedSquare(null);
-          setPossibleMoves([]);
-          
-          // إضافة الحركة للسجل
-          setGameHistory(prev => [...prev, move]);
-          
-          // إذا كان ضد الذكاء الاصطناعي
-          if (gameMode === 'ai' && newGame.turn() !== playerColor[0]) {
-            setTimeout(() => makeAIMove(newGame), 500);
-          }
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>شطرنج برو | Chess Pro</title>
+    <style>
+        /* --- CSS: التصميم والمظهر --- */
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #e67e22;
+            --accent-color: #27ae60;
+            --bg-color: #1a1a1a;
+            --board-light: #f0d9b5;
+            --board-dark: #b58863;
+            --text-color: #ecf0f1;
+            --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-      } catch (e) {
-        // إذا النقر على قطعة أخرى
-        if (piece && piece.color === game.turn()) {
-          setSelectedSquare(square);
-          setPossibleMoves(game.moves({ square, verbose: true }));
-          return;
+
+        body {
+            margin: 0;
+            font-family: var(--font-main);
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            overflow-x: hidden;
         }
-        setSelectedSquare(null);
-        setPossibleMoves([]);
-      }
-    } else {
-      if (piece && piece.color === game.turn()) {
-        setSelectedSquare(square);
-        setPossibleMoves(game.moves({ square, verbose: true }));
-      }
-    }
-  };
 
-  const makeAIMove = (currentGame) => {
-    const moves = currentGame.moves({ verbose: true });
-    if (moves.length === 0) return;
-
-    // خوارزمية بسيطة للذكاء الاصطناعي
-    let bestMove = null;
-    let bestScore = -Infinity;
-
-    moves.forEach(move => {
-      currentGame.move(move);
-      const score = evaluateBoard(currentGame);
-      currentGame.undo();
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMove = move;
-      }
-    });
-
-    if (bestMove) {
-      currentGame.move(bestMove);
-      setGame(new Chess(currentGame.fen()));
-      setGameHistory(prev => [...prev, bestMove]);
-    }
-  };
-
-  const evaluateBoard = (game) => {
-    let score = 0;
-    const board = game.board();
-    const pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
-
-    for (let i = 0; i < 8; i++) {
-      for (let j = 0; j < 8; j++) {
-        const piece = board[i][j];
-        if (piece) {
-          const value = pieceValues[piece.type];
-          score += piece.color === 'w' ? value : -value;
+        /* شاشات التحميل والتنقل */
+        .screen {
+            display: none;
+            width: 100%;
+            max-width: 600px;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+            animation: fadeIn 0.5s;
         }
-      }
-    }
-    return game.turn() === 'w' ? score : -score;
-  };
 
-  const resetGame = () => {
-    setGame(new Chess());
-    setSelectedSquare(null);
-    setPossibleMoves([]);
-    setGameHistory([]);
-  };
+        .screen.active {
+            display: block;
+        }
 
-  const startNewGame = (mode, color = 'white') => {
-    setGameMode(mode);
-    setPlayerColor(color);
-    resetGame();
-    setCurrentView('game');
-  };
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
 
-  // === دوال المستخدم ===
-  const handleLogin = (userData) => {
-    const newUser = {
-      id: Date.now(),
-      username: userData.username,
-      email: userData.email,
-      profile: {
-        level: 'مبتدئ',
-        eloRating: 1200,
-        coins: 100,
-        country: userData.country,
-        language: userData.language
-      },
-      statistics: {
-        gamesPlayed: 0,
-        gamesWon: 0,
-        gamesLost: 0,
-        gamesDrawn: 0
-      },
-      preferences: {
-        theme: 'classic',
-        soundEnabled: true
-      }
-    };
-    setUser(newUser);
-    localStorage.setItem('chessUser', JSON.stringify(newUser));
-  };
+        h1, h2 { color: var(--secondary-color); text-shadow: 2px 2px 4px #000; }
+        
+        button {
+            background: linear-gradient(45deg, var(--secondary-color), #d35400);
+            border: none;
+            padding: 12px 24px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 8px;
+            margin: 10px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            font-weight: bold;
+        }
 
-  const handleLogout = () => {
-    setUser(null);
-    localStorage.removeItem('chessUser');
-  };
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(230, 126, 34, 0.6);
+        }
 
-  // === مكونات الواجهة ===
-  const ChessBoard = () => {
-    const renderSquare = (i, j) => {
-      const file = 'abcdefgh'[j];
-      const rank = 8 - i;
-      const square = `${file}${rank}`;
-      const isLight = (i + j) % 2 === 0;
-      const piece = game.get(square);
-      const isSelected = selectedSquare === square;
-      const isPossibleMove = possibleMoves.some(move => move.to === square);
+        input, select {
+            padding: 10px;
+            margin: 10px;
+            border-radius: 5px;
+            border: 1px solid #555;
+            background: #333;
+            color: white;
+            width: 80%;
+        }
 
-      return (
-        <div
-          key={square}
-          className={`square ${isLight ? 'light' : 'dark'} ${
-            isSelected ? 'selected' : ''
-          } ${isPossibleMove ? 'possible-move' : ''}`}
-          onClick={() => handleSquareClick(square)}
-          style={{
-            width: '60px',
-            height: '60px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-            position: 'relative',
-            backgroundColor: isLight ? '#f0d9b5' : '#b58863'
-          }}
-        >
-          {piece && (
-            <div style={{
-              fontSize: '45px',
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              userSelect: 'none'
-            }}>
-              {getPieceSymbol(piece)}
-            </div>
-          )}
-          {isPossibleMove && !piece && (
-            <div style={{
-              width: '20px',
-              height: '20px',
-              backgroundColor: 'rgba(0,0,0,0.3)',
-              borderRadius: '50%'
-            }} />
-          )}
-        </div>
-      );
-    };
+        /* رقعة الشطرنج */
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-    const getPieceSymbol = (piece) => {
-      const symbols = {
-        w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
-        b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
-      };
-      return symbols[piece.color][piece.type];
-    };
+        #chessboard {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 1;
+            border: 5px solid #4a3021;
+            user-select: none;
+        }
 
-    const squares = [];
-    for (let i = 0; i < 8; i++) {
-      for (let j = 0; j < 8; j++) {
-        squares.push(renderSquare(i, j));
-      }
-    }
+        .square {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            cursor: pointer;
+            position: relative;
+        }
 
-    return (
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '20px',
-        padding: '20px',
-        background: '#2c3e50',
-        borderRadius: '15px',
-        boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
-      }}>
-        <div style={{
-          display: 'flex',
-          gap: '20px',
-          alignItems: 'center',
-          color: 'white',
-          fontSize: '18px',
-          fontWeight: 'bold'
-        }}>
-          <div style={{
-            padding: '10px 20px',
-            background: '#34495e',
-            borderRadius: '25px'
-          }}>
-            دور: {game.turn() === 'w' ? 'الأبيض' : 'الأسود'}
-          </div>
-          {game.isCheck() && (
-            <div style={{
-              padding: '10px 20px',
-              background: '#e74c3c',
-              borderRadius: '25px',
-              animation: 'pulse 1.5s infinite'
-            }}>
-              كش ملك!
-            </div>
-          )}
-        </div>
+        .light { background-color: var(--board-light); color: black; }
+        .dark { background-color: var(--board-dark); color: black; }
+        
+        .selected { background-color: rgba(255, 255, 0, 0.5) !important; }
+        .possible-move::after {
+            content: '';
+            width: 15px;
+            height: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 50%;
+            position: absolute;
+        }
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(8, 60px)',
-          gridTemplateRows: 'repeat(8, 60px)',
-          border: '3px solid #34495e',
-          borderRadius: '8px',
-          overflow: 'hidden'
-        }}>
-          {squares}
-        </div>
+        /* معلومات اللعب */
+        .player-info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 400px;
+            margin: 10px 0;
+            background: #333;
+            padding: 10px;
+            border-radius: 8px;
+        }
 
-        <div style={{ display: 'flex', gap: '15px' }}>
-          <button
-            onClick={resetGame}
-            style={{
-              padding: '12px 24px',
-              background: '#3498db',
-              color: 'white',
-              border: 'none',
-              borderRadius: '25px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold'
-            }}
-          >
-            لعبة جديدة
-          </button>
-          <button
-            onClick={() => setCurrentView('main')}
-            style={{
-              padding: '12px 24px',
-              background: '#95a5a6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '25px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold'
-            }}
-          >
-            القائمة الرئيسية
-          </button>
-        </div>
-      </div>
-    );
-  };
+        /* المتجر والعملات */
+        .currency-display {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 5px 10px;
+            border-radius: 15px;
+            color: gold;
+            font-weight: bold;
+            z-index: 1000;
+        }
 
-  const LoginForm = () => {
-    const [formData, setFormData] = useState({
-      username: '',
-      email: '',
-      password: '',
-      country: 'SA',
-      language: 'ar'
-    });
+        .shop-item {
+            background: #333;
+            border: 1px solid #555;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-    const handleSubmit = (e) => {
-      e.preventDefault();
-      if (formData.username && formData.email && formData.password) {
-        handleLogin(formData);
-      }
-    };
+        /* الرموز التعبيرية */
+        .emote-panel {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .emote-btn {
+            background: none;
+            font-size: 20px;
+            padding: 5px;
+            margin: 0;
+        }
 
-    return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        padding: '20px'
-      }}>
-        <div style={{
-          background: 'white',
-          padding: '40px',
-          borderRadius: '20px',
-          boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-          width: '100%',
-          maxWidth: '400px'
-        }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#2c3e50' }}>
-            إنشاء حساب جديد
-          </h2>
-          
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                اسم المستخدم
-              </label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData({...formData, username: e.target.value})}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #bdc3c7',
-                  borderRadius: '10px',
-                  fontSize: '16px'
-                }}
-                placeholder="اختر اسمًا فريدًا"
-                required
-              />
-            </div>
+        /* التنبيهات */
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #222;
+            padding: 20px;
+            border: 2px solid var(--secondary-color);
+            z-index: 2000;
+            display: none;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            width: 80%;
+            max-width: 400px;
+        }
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                البريد الإلكتروني
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #bdc3c7',
-                  borderRadius: '10px',
-                  fontSize: '16px'
-                }}
-                placeholder="example@email.com"
-                required
-              />
-            </div>
+        /* سياسة الخصوصية */
+        .legal-text {
+            font-size: 12px;
+            color: #aaa;
+            text-align: justify;
+            max-height: 100px;
+            overflow-y: scroll;
+            background: #222;
+            padding: 5px;
+            border: 1px solid #444;
+            margin-bottom: 10px;
+        }
 
-            <div>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                كلمة المرور
-              </label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({...formData, password: e.target.value})}
-                style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #bdc3c7',
-                  borderRadius: '10px',
-                  fontSize: '16px'
-                }}
-                placeholder="6 أحرف على الأقل"
-                required
-              />
-            </div>
+        @media (max-width: 600px) {
+            #chessboard { max-width: 95vw; }
+            .square { font-size: 24px; }
+        }
+    </style>
+</head>
+<body>
 
-            <button
-              type="submit"
-              style={{
-                padding: '15px',
-                background: 'linear-gradient(135deg, #3498db, #2980b9)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '10px',
-                fontSize: '18px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                marginTop: '10px'
-              }}
-            >
-              إنشاء الحساب
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  };
-
-  const MainMenu = () => (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center'
-    }}>
-      <div style={{
-        background: 'rgba(255,255,255,0.95)',
-        padding: '40px',
-        borderRadius: '20px',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-        textAlign: 'center',
-        maxWidth: '600px',
-        width: '100%'
-      }}>
-        <h1 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '2.5em' }}>
-          ♞ Chess Master
-        </h1>
-        <p style={{ color: '#7f8c8d', marginBottom: '40px', fontSize: '1.2em' }}>
-          استمتع بلعبة الشطرنج بتجربة فريدة ومميزة
-        </p>
-
-        {user && (
-          <div style={{
-            background: '#ecf0f1',
-            padding: '20px',
-            borderRadius: '15px',
-            marginBottom: '30px'
-          }}>
-            <h3 style={{ color: '#2c3e50', marginBottom: '10px' }}>
-              مرحباً، {user.username}!
-            </h3>
-            <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#3498db' }}>
-                  {user.profile.eloRating}
-                </div>
-                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>التصنيف</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#e74c3c' }}>
-                  {user.statistics.gamesWon}
-                </div>
-                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>الفوز</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#f39c12' }}>
-                  {user.profile.coins}
-                </div>
-                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>العملات</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-          <div
-            onClick={() => startNewGame('ai', 'white')}
-            style={{
-              background: 'linear-gradient(135deg, #3498db, #2980b9)',
-              color: 'white',
-              padding: '30px 20px',
-              borderRadius: '15px',
-              cursor: 'pointer',
-              transition: 'transform 0.3s ease',
-              textAlign: 'center'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
-            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
-          >
-            <div style={{ fontSize: '3em', marginBottom: '10px' }}>🤖</div>
-            <h3>العب ضد الكمبيوتر</h3>
-            <p>تدرب ضد ذكاء اصطناعي</p>
-          </div>
-
-          <div
-            onClick={() => startNewGame('local', 'white')}
-            style={{
-              background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
-              color: 'white',
-              padding: '30px 20px',
-              borderRadius: '15px',
-              cursor: 'pointer',
-              transition: 'transform 0.3s ease',
-              textAlign: 'center'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
-            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
-          >
-            <div style={{ fontSize: '3em', marginBottom: '10px' }}>👥</div>
-            <h3>لاعب ضد لاعب</h3>
-            <p>على نفس الجهاز</p>
-          </div>
-
-          <div
-            onClick={() => setCurrentView('training')}
-            style={{
-              background: 'linear-gradient(135deg, #e74c3c, #c0392b)',
-              color: 'white',
-              padding: '30px 20px',
-              borderRadius: '15px',
-              cursor: 'pointer',
-              transition: 'transform 0.3s ease',
-              textAlign: 'center'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
-            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
-          >
-            <div style={{ fontSize: '3em', marginBottom: '10px' }}>🎯</div>
-            <h3>جلسات تدريبية</h3>
-            <p>حسن مهاراتك</p>
-          </div>
-
-          <div
-            onClick={() => setCurrentView('profile')}
-            style={{
-              background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
-              color: 'white',
-              padding: '30px 20px',
-              borderRadius: '15px',
-              cursor: 'pointer',
-              transition: 'transform 0.3s ease',
-              textAlign: 'center'
-            }}
-            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
-            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
-          >
-            <div style={{ fontSize: '3em', marginBottom: '10px' }}>👤</div>
-            <h3>الملف الشخصي</h3>
-            <p>إدارة حسابك</p>
-          </div>
-        </div>
-
-        {user && (
-          <button
-            onClick={handleLogout}
-            style={{
-              marginTop: '30px',
-              padding: '12px 30px',
-              background: 'transparent',
-              color: '#e74c3c',
-              border: '2px solid #e74c3c',
-              borderRadius: '25px',
-              cursor: 'pointer',
-              fontSize: '16px',
-              fontWeight: 'bold',
-              transition: 'all 0.3s ease'
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.background = '#e74c3c';
-              e.target.style.color = 'white';
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.background = 'transparent';
-              e.target.style.color = '#e74c3c';
-            }}
-          >
-            تسجيل الخروج
-          </button>
-        )}
-      </div>
+    <div class="currency-display">
+        💰 <span id="coin-balance">0</span> | 💎 <span id="gem-balance">0</span>
     </div>
-  );
 
-  const TrainingView = () => (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px'
-    }}>
-      <div style={{
-        background: 'rgba(255,255,255,0.95)',
-        padding: '40px',
-        borderRadius: '20px',
-        maxWidth: '800px',
-        margin: '0 auto'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-          <h1 style={{ color: '#2c3e50' }}>🎯 برنامج التدريب</h1>
-          <button
-            onClick={() => setCurrentView('main')}
-            style={{
-              padding: '10px 20px',
-              background: '#95a5a6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }}
-          >
-            العودة
-          </button>
+    <div id="screen-login" class="screen active">
+        <h1>شطرنج برو</h1>
+        <h2>Chess Pro</h2>
+        <p>الاحترافية، المتعة، والتحدي</p>
+        
+        <input type="text" id="username" placeholder="اسم المستخدم (Username)">
+        <input type="email" id="email" placeholder="البريد الإلكتروني (Email)">
+        <input type="password" id="password" placeholder="كلمة المرور (Password)">
+        
+        <div class="legal-text">
+            يجب الموافقة على شروط الاستخدام وسياسة الخصوصية. نحن نستخدم إجراءات أمان عالية لحماية بياناتك. يمنع استخدام الألفاظ النابية أو محاولة الاختراق تحت طائلة المسؤولية القانونية.
         </div>
-
-        <div style={{ display: 'grid', gap: '20px' }}>
-          <div style={{
-            background: 'linear-gradient(135deg, #3498db, #2980b9)',
-            color: 'white',
-            padding: '25px',
-            borderRadius: '15px',
-            cursor: 'pointer'
-          }}>
-            <h3>🌱 المستوى المبتدئ</h3>
-            <p>تعلم حركات القطع والأساسيات</p>
-            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
-              <div style={{ background: 'white', height: '100%', width: '75%', borderRadius: '5px' }}></div>
-            </div>
-          </div>
-
-          <div style={{
-            background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
-            color: 'white',
-            padding: '25px',
-            borderRadius: '15px',
-            cursor: 'pointer'
-          }}>
-            <h3>⚔️ التكتيكات الأساسية</h3>
-            <p>تعلم الهجمات والدفاعات</p>
-            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
-              <div style={{ background: 'white', height: '100%', width: '40%', borderRadius: '5px' }}></div>
-            </div>
-          </div>
-
-          <div style={{
-            background: 'linear-gradient(135deg, #e74c3c, #c0392b)',
-            color: 'white',
-            padding: '25px',
-            borderRadius: '15px',
-            cursor: 'pointer'
-          }}>
-            <h3>🎯 الاستراتيجيات المتقدمة</h3>
-            <p>تخطيط طويل المدى</p>
-            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
-              <div style={{ background: 'white', height: '100%', width: '20%', borderRadius: '5px' }}></div>
-            </div>
-          </div>
-        </div>
-      </div>
+        <label><input type="checkbox" id="terms-check"> أوافق على الشروط والسياسات</label>
+        
+        <br>
+        <button onclick="app.login()">تسجيل الدخول / إنشاء حساب</button>
     </div>
-  );
 
-  const ProfileView = () => (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px'
-    }}>
-      <div style={{
-        background: 'rgba(255,255,255,0.95)',
-        padding: '40px',
-        borderRadius: '20px',
-        maxWidth: '600px',
-        margin: '0 auto'
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-          <h1 style={{ color: '#2c3e50' }}>👤 الملف الشخصي</h1>
-          <button
-            onClick={() => setCurrentView('main')}
-            style={{
-              padding: '10px 20px',
-              background: '#95a5a6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '10px',
-              cursor: 'pointer'
-            }}
-          >
-            العودة
-          </button>
+    <div id="screen-menu" class="screen">
+        <h2 id="welcome-msg">مرحباً</h2>
+        <p>المستوى: <span id="player-level">1</span> (مبتدئ)</p>
+        
+        <button onclick="app.startGame('ai')">⚔️ لعب ضد الذكاء الاصطناعي</button>
+        <button onclick="app.showScreen('screen-training')">🎓 التدريب والاستراتيجيات</button>
+        <button onclick="app.showScreen('screen-shop')">🛒 المتجر (Shop)</button>
+        <button onclick="app.showScreen('screen-settings')">⚙️ الإعدادات</button>
+        <button onclick="app.showScreen('screen-profile')">👤 الملف الشخصي</button>
+        
+        <div style="margin-top: 20px; border-top: 1px solid #555; padding-top: 10px;">
+            <p>🏆 الدوري الشهري | 📅 البطولة السنوية</p>
+            <small style="color: #888;">الاشتراك البريميوم: 19$ / شهر</small>
+        </div>
+    </div>
+
+    <div id="screen-game" class="screen">
+        <div class="player-info">
+            <span>🤖 الخصم (AI/Player)</span>
+            <span id="timer-opponent">10:00</span>
+        </div>
+        
+        <div id="game-container">
+            <div id="chessboard"></div>
+        </div>
+        
+        <div class="player-info">
+            <span id="player-name-display">أنت</span>
+            <span id="timer-player">10:00</span>
         </div>
 
-        {user && (
-          <div style={{ display: 'grid', gap: '20px' }}>
-            <div style={{
-              background: '#ecf0f1',
-              padding: '20px',
-              borderRadius: '15px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '3em', marginBottom: '10px' }}>👑</div>
-              <h2 style={{ color: '#2c3e50', marginBottom: '5px' }}>{user.username}</h2>
-              <p style={{ color: '#7f8c8d', marginBottom: '15px' }}>{user.email}</p>
-              <div style={{ background: '#3498db', color: 'white', padding: '5px 15px', borderRadius: '15px', display: 'inline-block' }}>
-                {user.profile.level}
-              </div>
-            </div>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: '15px'
-            }}>
-              <div style={{ background: '#3498db', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.profile.eloRating}</div>
-                <div>التصنيف</div>
-              </div>
-              <div style={{ background: '#2ecc71', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.statistics.gamesPlayed}</div>
-                <div>المباريات</div>
-              </div>
-              <div style={{ background: '#e74c3c', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.statistics.gamesWon}</div>
-                <div>الفوز</div>
-              </div>
-              <div style={{ background: '#f39c12', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.profile.coins}</div>
-                <div>العملات</div>
-              </div>
-            </div>
-
-            <div style={{
-              background: '#34495e',
-              color: 'white',
-              padding: '20px',
-              borderRadius: '15px'
-            }}>
-              <h3 style={{ marginBottom: '15px' }}>الإحصائيات</h3>
-              <div style={{ display: 'grid', gap: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>معدل الفوز:</span>
-                  <span>
-                    {user.statistics.gamesPlayed > 0 
-                      ? Math.round((user.statistics.gamesWon / user.statistics.gamesPlayed) * 100)
-                      : 0}%
-                  </span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>البلد:</span>
-                  <span>{user.profile.country === 'SA' ? 'السعودية' : user.profile.country}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span>اللغة:</span>
-                  <span>{user.profile.language === 'ar' ? 'العربية' : user.profile.language}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        <div class="emote-panel">
+            <button class="emote-btn" onclick="game.sendEmote('👏')">👏</button>
+            <button class="emote-btn" onclick="game.sendEmote('🤔')">🤔</button>
+            <button class="emote-btn" onclick="game.sendEmote('🔥')">🔥</button>
+            <button class="emote-btn" onclick="game.sendEmote('🏳️')">🏳️</button>
+        </div>
+        
+        <button onclick="app.showScreen('screen-menu')" style="background: #c0392b;">إنهاء المباراة</button>
     </div>
-  );
 
-  // === التصيير الرئيسي ===
-  if (!user) {
-    return <LoginForm />;
-  }
+    <div id="screen-shop" class="screen">
+        <h2>المتجر</h2>
+        <div class="shop-item">
+            <span>🎨 قطع شطرنج ذهبية</span>
+            <button onclick="shop.buy(500, 'coins')">500 💰</button>
+        </div>
+        <div class="shop-item">
+            <span>🌌 خلفية الفضاء</span>
+            <button onclick="shop.buy(100, 'gems')">100 💎</button>
+        </div>
+        <div class="shop-item">
+            <span>👑 اشتراك بريميوم (شهر)</span>
+            <button onclick="shop.buyRealMoney(19)">$19.00</button>
+        </div>
+        <button onclick="app.showScreen('screen-menu')">عودة</button>
+    </div>
 
-  switch (currentView) {
-    case 'game':
-      return <ChessBoard />;
-    case 'training':
-      return <TrainingView />;
-    case 'profile':
-      return <ProfileView />;
-    default:
-      return <MainMenu />;
-  }
-};
+    <div id="screen-settings" class="screen">
+        <h2>الإعدادات</h2>
+        <label>اللغة:
+            <select id="lang-select" onchange="app.changeLang()">
+                <option value="ar">العربية</option>
+                <option value="en">English</option>
+                <option value="fr">Français</option>
+                <option value="es">Español</option>
+                <option value="de">Deutsch</option>
+                </select>
+        </label>
+        <br>
+        <label>وقت المباراة:
+            <select>
+                <option>قصيرة (10د)</option>
+                <option>متوسطة (20د)</option>
+                <option>طويلة (30د)</option>
+            </select>
+        </label>
+        <br>
+        <button onclick="app.deleteAccount()" style="background:red">حذف الحساب</button>
+        <button onclick="app.showScreen('screen-menu')">عودة</button>
+    </div>
 
-// إضافة أنماط CSS مدمجة
-const styles = `
-  @keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.7; }
-    100% { opacity: 1; }
-  }
-  
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  }
-  
-  body {
-    background: #ecf0f1;
-  }
-`;
+    <div id="screen-training" class="screen">
+        <h2>مركز التدريب</h2>
+        <p>تعلم الاستراتيجيات الأساسية وافتتاحيات اللعب.</p>
+        <div style="text-align: right; padding: 10px;">
+            <h3>1. السيطرة على المنتصف</h3>
+            <p>حاول وضع البيادق في المربعات e4 و d4.</p>
+            <h3>2. حماية الملك</h3>
+            <p>قم بالتبييت مبكراً.</p>
+        </div>
+        <button onclick="app.showScreen('screen-menu')">تم</button>
+    </div>
 
-// إضافة الأنماط إلى head
-const styleSheet = document.createElement("style");
-styleSheet.innerText = styles;
-document.head.appendChild(styleSheet);
+    <div id="modal-popup" class="modal">
+        <h3 id="modal-title">تنبيه</h3>
+        <p id="modal-msg">رسالة</p>
+        <button onclick="document.getElementById('modal-popup').style.display='none'">حسناً</button>
+    </div>
 
-export default ChessMaster;
+    <script>
+        /* --- JavaScript: المنطق والتحكم --- */
+        
+        // كائن التطبيق الرئيسي لإدارة الحالة
+        const app = {
+            user: {
+                name: "Guest",
+                coins: 100,
+                gems: 10,
+                level: 1,
+                xp: 0
+            },
+            
+            init: function() {
+                this.loadData();
+                this.updateCurrencyUI();
+            },
+
+            loadData: function() {
+                const saved = localStorage.getItem('chessProUser');
+                if (saved) {
+                    this.user = JSON.parse(saved);
+                }
+            },
+
+            saveData: function() {
+                localStorage.setItem('chessProUser', JSON.stringify(this.user));
+                this.updateCurrencyUI();
+            },
+
+            updateCurrencyUI: function() {
+                document.getElementById('coin-balance').innerText = this.user.coins;
+                document.getElementById('gem-balance').innerText = this.user.gems;
+                document.getElementById('player-level').innerText = this.user.level;
+            },
+
+            showScreen: function(screenId) {
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById(screenId).classList.add('active');
+            },
+
+            login: function() {
+                const name = document.getElementById('username').value;
+                const terms = document.getElementById('terms-check').checked;
+                
+                // فلتر الأسماء المسيئة (محاكاة بسيطة)
+                const badWords = ["bad", "ugly", "شتيمة"];
+                if (badWords.some(w => name.includes(w))) {
+                    this.showModal("خطأ", "هذا الاسم غير مسموح به.");
+                    return;
+                }
+
+                if (!name || !terms) {
+                    this.showModal("تنبيه", "الرجاء إدخال الاسم والموافقة على الشروط.");
+                    return;
+                }
+
+                this.user.name = name;
+                this.saveData();
+                document.getElementById('welcome-msg').innerText = "مرحباً " + name;
+                document.getElementById('player-name-display').innerText = name;
+                
+                // سؤال التدريب
+                if (confirm("هل تود عرض البرنامج التدريبي لتعلم الأساسيات؟")) {
+                    this.showScreen('screen-training');
+                } else {
+                    this.showScreen('screen-menu');
+                }
+            },
+
+            startGame: function(mode) {
+                this.showScreen('screen-game');
+                game.initBoard();
+                // محاكاة إعلان مدفوع
+                this.showModal("إعلان", "جاري عرض إعلان من الشريك... (محاكاة 5 ثواني)");
+                setTimeout(() => document.getElementById('modal-popup').style.display='none', 3000);
+            },
+
+            showModal: function(title, msg) {
+                document.getElementById('modal-title').innerText = title;
+                document.getElementById('modal-msg').innerText = msg;
+                document.getElementById('modal-popup').style.display = 'block';
+            },
+
+            deleteAccount: function() {
+                if(confirm("هل أنت متأكد؟ لا يمكن التراجع عن هذا الإجراء.")) {
+                    localStorage.removeItem('chessProUser');
+                    location.reload();
+                }
+            },
+            
+            changeLang: function() {
+                const lang = document.getElementById('lang-select').value;
+                document.dir = (lang === 'ar') ? 'rtl' : 'ltr';
+                alert("تم تغيير تفضيلات اللغة إلى: " + lang);
+            }
+        };
+
+        // منطق المتجر
+        const shop = {
+            buy: function(cost, type) {
+                if (app.user[type] >= cost) {
+                    app.user[type] -= cost;
+                    app.saveData();
+                    app.showModal("نجاح", "تمت عملية الشراء بنجاح!");
+                } else {
+                    app.showModal("فشل", "رصيدك غير كافٍ.");
+                }
+            },
+            buyRealMoney: function(amount) {
+                // محاكاة بوابة دفع آمنة
+                const card = prompt("محاكاة: أدخل رقم البطاقة الائتمانية (وهمي):");
+                if (card) {
+                    app.showModal("نظام الدفع", "تم الدفع بنجاح! شكرا لاشتراكك.");
+                    app.user.gems += 500; // مكافأة
+                    app.saveData();
+                }
+            }
+        };
+
+        // منطق اللعبة (مبسط جداً كنموذج)
+        const game = {
+            board: [],
+            selectedSquare: null,
+            turn: 'white', // white moves first
+            
+            // تمثيل القطع باليونيكود
+            pieces: {
+                w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
+                b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
+            },
+
+            initBoard: function() {
+                const boardEl = document.getElementById('chessboard');
+                boardEl.innerHTML = '';
+                // وضعية ابتدائية مبسطة للتجربة
+                const initialLayout = [
+                    ['r','n','b','q','k','b','n','r'],
+                    ['p','p','p','p','p','p','p','p'],
+                    ['','','','','','','',''],
+                    ['','','','','','','',''],
+                    ['','','','','','','',''],
+                    ['','','','','','','',''],
+                    ['P','P','P','P','P','P','P','P'],
+                    ['R','N','B','Q','K','B','N','R']
+                ];
+
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        const sq = document.createElement('div');
+                        sq.className = `square ${(r + c) % 2 === 0 ? 'light' : 'dark'}`;
+                        sq.dataset.row = r;
+                        sq.dataset.col = c;
+                        
+                        const pieceChar = initialLayout[r][c];
+                        if (pieceChar) {
+                            const color = pieceChar === pieceChar.toUpperCase() ? 'w' : 'b';
+                            const type = pieceChar.toLowerCase();
+                            sq.innerText = this.pieces[color][type];
+                            sq.dataset.piece = pieceChar;
+                            sq.dataset.color = color;
+                        }
+                        
+                        sq.onclick = () => this.handleClick(sq);
+                        boardEl.appendChild(sq);
+                    }
+                }
+            },
+
+            handleClick: function(sq) {
+                // منطق تحريك بسيط جداً (غير كامل القوانين) لأغراض العرض
+                if (this.selectedSquare) {
+                    // محاولة النقل
+                    if (sq !== this.selectedSquare) {
+                        // نقل القطعة
+                        sq.innerText = this.selectedSquare.innerText;
+                        sq.dataset.piece = this.selectedSquare.dataset.piece;
+                        sq.dataset.color = this.selectedSquare.dataset.color;
+                        
+                        // إفراغ المربع القديم
+                        this.selectedSquare.innerText = '';
+                        delete this.selectedSquare.dataset.piece;
+                        delete this.selectedSquare.dataset.color;
+                        this.selectedSquare.classList.remove('selected');
+                        this.selectedSquare = null;
+                        
+                        // تشغيل الصوت
+                        this.playSound('move');
+                        
+                        // تبديل الدور وتشغيل الذكاء الاصطناعي
+                        this.turn = 'black';
+                        setTimeout(() => this.aiMove(), 1000);
+                    } else {
+                        // إلغاء التحديد
+                        this.selectedSquare.classList.remove('selected');
+                        this.selectedSquare = null;
+                    }
+                } else {
+                    // تحديد قطعة
+                    if (sq.innerText && sq.dataset.color === 'w') { // اللاعب يلعب بالأبيض فقط
+                        this.selectedSquare = sq;
+                        sq.classList.add('selected');
+                    }
+                }
+            },
+
+            aiMove: function() {
+                // ذكاء اصطناعي عشوائي بسيط جداً
+                const squares = Array.from(document.querySelectorAll('.square'));
+                const blackPieces = squares.filter(s => s.dataset.color === 'b');
+                
+                if (blackPieces.length > 0) {
+                    const randomPiece = blackPieces[Math.floor(Math.random() * blackPieces.length)];
+                    // حركة عشوائية لأسفل (فقط للمحاكاة)
+                    const currentRow = parseInt(randomPiece.dataset.row);
+                    const currentCol = parseInt(randomPiece.dataset.col);
+                    
+                    // محاولة إيجاد مربع فارغ عشوائي
+                    const targetSq = squares.find(s => 
+                        parseInt(s.dataset.row) === currentRow + 1 && 
+                        Math.abs(parseInt(s.dataset.col) - currentCol) <= 1
+                    );
+
+                    if (targetSq) {
+                        targetSq.innerText = randomPiece.innerText;
+                        targetSq.dataset.piece = randomPiece.dataset.piece;
+     
