@@ -1,499 +1,824 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>شطرنج برو - Chess Pro</title>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Cairo', sans-serif;
-        }
+import React, { useState, useRef, useEffect } from 'react';
+import { Chess } from 'chess.js';
 
-        body {
-            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-            color: white;
-            direction: rtl;
-            min-height: 100vh;
-        }
+// الملف الكامل بلغة واحدة - Chess Master
+const ChessMaster = () => {
+  // === حالات التطبيق ===
+  const [currentView, setCurrentView] = useState('main'); // main, game, profile, training
+  const [user, setUser] = useState(null);
+  const [game, setGame] = useState(new Chess());
+  const [selectedSquare, setSelectedSquare] = useState(null);
+  const [possibleMoves, setPossibleMoves] = useState([]);
+  const [playerColor, setPlayerColor] = useState('white');
+  const [gameMode, setGameMode] = useState('ai');
+  const [aiDifficulty, setAiDifficulty] = useState('medium');
+  const [gameHistory, setGameHistory] = useState([]);
 
-        .navbar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 2rem;
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-        }
+  // === تأثيرات ===
+  useEffect(() => {
+    // تحميل بيانات المستخدم من localStorage
+    const savedUser = localStorage.getItem('chessUser');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
+  }, []);
 
-        .nav-brand {
-            font-size: 1.5rem;
-            font-weight: bold;
-        }
+  // === دوال اللعبة ===
+  const handleSquareClick = (square) => {
+    if (game.isGameOver()) return;
 
-        .nav-links {
-            display: flex;
-            gap: 1rem;
-        }
+    const piece = game.get(square);
 
-        .nav-btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+    if (selectedSquare) {
+      try {
+        const move = game.move({
+          from: selectedSquare,
+          to: square,
+          promotion: 'q'
+        });
 
-        .nav-btn.primary {
-            background: #4CAF50;
-            color: white;
+        if (move) {
+          const newGame = new Chess(game.fen());
+          setGame(newGame);
+          setSelectedSquare(null);
+          setPossibleMoves([]);
+          
+          // إضافة الحركة للسجل
+          setGameHistory(prev => [...prev, move]);
+          
+          // إذا كان ضد الذكاء الاصطناعي
+          if (gameMode === 'ai' && newGame.turn() !== playerColor[0]) {
+            setTimeout(() => makeAIMove(newGame), 500);
+          }
         }
-
-        .nav-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+      } catch (e) {
+        // إذا النقر على قطعة أخرى
+        if (piece && piece.color === game.turn()) {
+          setSelectedSquare(square);
+          setPossibleMoves(game.moves({ square, verbose: true }));
+          return;
         }
+        setSelectedSquare(null);
+        setPossibleMoves([]);
+      }
+    } else {
+      if (piece && piece.color === game.turn()) {
+        setSelectedSquare(square);
+        setPossibleMoves(game.moves({ square, verbose: true }));
+      }
+    }
+  };
 
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
+  const makeAIMove = (currentGame) => {
+    const moves = currentGame.moves({ verbose: true });
+    if (moves.length === 0) return;
+
+    // خوارزمية بسيطة للذكاء الاصطناعي
+    let bestMove = null;
+    let bestScore = -Infinity;
+
+    moves.forEach(move => {
+      currentGame.move(move);
+      const score = evaluateBoard(currentGame);
+      currentGame.undo();
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+    });
+
+    if (bestMove) {
+      currentGame.move(bestMove);
+      setGame(new Chess(currentGame.fen()));
+      setGameHistory(prev => [...prev, bestMove]);
+    }
+  };
+
+  const evaluateBoard = (game) => {
+    let score = 0;
+    const board = game.board();
+    const pieceValues = { 'p': 10, 'n': 30, 'b': 30, 'r': 50, 'q': 90, 'k': 900 };
+
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        const piece = board[i][j];
+        if (piece) {
+          const value = pieceValues[piece.type];
+          score += piece.color === 'w' ? value : -value;
         }
+      }
+    }
+    return game.turn() === 'w' ? score : -score;
+  };
 
-        .hero-section {
-            text-align: center;
-            padding: 4rem 0;
-        }
+  const resetGame = () => {
+    setGame(new Chess());
+    setSelectedSquare(null);
+    setPossibleMoves([]);
+    setGameHistory([]);
+  };
 
-        .hero-section h1 {
-            font-size: 3.5rem;
-            margin-bottom: 1rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-        }
+  const startNewGame = (mode, color = 'white') => {
+    setGameMode(mode);
+    setPlayerColor(color);
+    resetGame();
+    setCurrentView('game');
+  };
 
-        .hero-section p {
-            font-size: 1.2rem;
-            margin-bottom: 2rem;
-            opacity: 0.9;
-        }
+  // === دوال المستخدم ===
+  const handleLogin = (userData) => {
+    const newUser = {
+      id: Date.now(),
+      username: userData.username,
+      email: userData.email,
+      profile: {
+        level: 'مبتدئ',
+        eloRating: 1200,
+        coins: 100,
+        country: userData.country,
+        language: userData.language
+      },
+      statistics: {
+        gamesPlayed: 0,
+        gamesWon: 0,
+        gamesLost: 0,
+        gamesDrawn: 0
+      },
+      preferences: {
+        theme: 'classic',
+        soundEnabled: true
+      }
+    };
+    setUser(newUser);
+    localStorage.setItem('chessUser', JSON.stringify(newUser));
+  };
 
-        .game-options {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 2rem;
-        }
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('chessUser');
+  };
 
-        .game-btn {
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            min-width: 200px;
-        }
+  // === مكونات الواجهة ===
+  const ChessBoard = () => {
+    const renderSquare = (i, j) => {
+      const file = 'abcdefgh'[j];
+      const rank = 8 - i;
+      const square = `${file}${rank}`;
+      const isLight = (i + j) % 2 === 0;
+      const piece = game.get(square);
+      const isSelected = selectedSquare === square;
+      const isPossibleMove = possibleMoves.some(move => move.to === square);
 
-        .game-btn.primary {
-            background: linear-gradient(45deg, #4CAF50, #45a049);
-            color: white;
-        }
-
-        .game-btn.secondary {
-            background: linear-gradient(45deg, #2196F3, #1976D2);
-            color: white;
-        }
-
-        .game-btn.accent {
-            background: linear-gradient(45deg, #FF9800, #F57C00);
-            color: white;
-        }
-
-        .game-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-        }
-
-        .game-section {
-            margin-top: 2rem;
-        }
-
-        .game-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-            padding: 1rem;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
-
-        .player-info {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 1rem;
-            border-radius: 8px;
-            min-width: 150px;
-        }
-
-        .player-info.white {
-            background: rgba(255, 255, 255, 0.9);
-            color: #333;
-        }
-
-        .player-info.black {
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-        }
-
-        .timer {
-            font-size: 1.5rem;
-            font-weight: bold;
-            font-family: monospace;
-        }
-
-        .game-controls {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .game-controls button {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            background: #555;
-            color: white;
-            transition: background 0.3s ease;
-        }
-
-        .game-controls button:hover {
-            background: #666;
-        }
-
-        .chess-container {
-            display: flex;
-            gap: 2rem;
-            justify-content: center;
-            align-items: flex-start;
-        }
-
-        .chess-board {
-            display: grid;
-            grid-template-columns: repeat(8, 70px);
-            grid-template-rows: repeat(8, 70px);
-            border: 15px solid #8B4513;
-            border-radius: 5px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-            background: #8B4513;
-        }
-
-        .square {
-            width: 70px;
-            height: 70px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            position: relative;
-            transition: all 0.2s ease;
-        }
-
-        .square.light {
-            background-color: #f0d9b5;
-        }
-
-        .square.dark {
-            background-color: #b58863;
-        }
-
-        .square.selected {
-            background-color: #aec6cf !important;
-        }
-
-        .square.valid-move::before {
-            content: '';
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.3);
-            position: absolute;
-        }
-
-        .square.check {
-            background-color: #ff6b6b !important;
-        }
-
-        .piece {
-            width: 60px;
-            height: 60px;
-            background-size: cover;
-            background-repeat: no-repeat;
-            transition: all 0.3s ease;
-            z-index: 10;
-            cursor: pointer;
-        }
-
-        .piece.dragging {
-            transform: scale(1.1);
-            z-index: 100;
-        }
-
-        .piece.wp { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="white" stroke="black"/></svg>'); }
-        .piece.wn { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21" fill="white" stroke="black"/><path d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.04-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3" fill="white" stroke="black"/><path d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0z" fill="black"/><path d="M15 15.5a.5 1.5 0 1 1-1 0 .5 1.5 0 1 1 1 0z" transform="rotate(30 13.5 15.5)" fill="black"/></svg>'); }
-        .piece.wb { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><g fill="white" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.35.49-2.32.47-3-.5 1.35-1.46 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5" stroke="black"/></g></svg>'); }
-        .piece.wr { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M9 39h27v-3H9v3zm3-3v-4h21v4H12zm-1-22V9h4v2h5V9h5v2h5V9h4v5" fill="white" stroke="black"/><path d="M34 14l-3 3H14l-3-3" fill="white" stroke="black"/><path d="M31 17v12.5H14V17" fill="white" stroke="black"/><path d="M31 29.5l1.5 2.5h-20l1.5-2.5" fill="white" stroke="black"/><path d="M11 14h23" fill="white" stroke="black"/></svg>'); }
-        .piece.wq { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5 9 26z" fill="white" stroke="black"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1 2.5-1 2.5-1.5 1.5 0 2.5 0 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z" fill="white" stroke="black"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0" fill="white"/></svg>'); }
-        .piece.wk { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 11.63V6M20 8h5" stroke="black" stroke-width="1.5" stroke-linejoin="round"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="white" stroke-linecap="butt" stroke-linejoin="round"/><path d="M12.5 37c5.5 3.5 14.5 3.5 20 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-2.5-7.5-12-10.5-16-4-3 6 6 10.5 6 10.5v7" fill="white"/><path d="M12.5 30c5.5-3 14.5-3 20 0M12.5 33.5c5.5-3 14.5-3 20 0M12.5 37c5.5-3 14.5-3 20 0" stroke="black"/></svg>'); }
-        .piece.bp { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z" fill="black" stroke="black"/></svg>'); }
-        .piece.bn { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21" fill="black" stroke="black"/><path d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.04-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3" fill="black" stroke="black"/><path d="M9.5 25.5a.5.5 0 1 1-1 0 .5.5 0 1 1 1 0z" fill="white"/><path d="M15 15.5a.5 1.5 0 1 1-1 0 .5 1.5 0 1 1 1 0z" transform="rotate(30 13.5 15.5)" fill="white"/></svg>'); }
-        .piece.bb { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><g fill="none" fill-rule="evenodd" stroke="black" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><g fill="black" stroke-linecap="butt"><path d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.35.49-2.32.47-3-.5 1.35-1.46 3-2 3-2z"/><path d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"/><path d="M25 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0z"/></g><path d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5" stroke="white"/></g></svg>'); }
-        .piece.br { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M9 39h27v-3H9v3zm3-3v-4h21v4H12zm-1-22V9h4v2h5V9h5v2h5V9h4v5" fill="black" stroke="black"/><path d="M34 14l-3 3H14l-3-3" fill="black" stroke="black"/><path d="M31 17v12.5H14V17" fill="black" stroke="black"/><path d="M31 29.5l1.5 2.5h-20l1.5-2.5" fill="black" stroke="black"/><path d="M11 14h23" fill="black" stroke="black"/></svg>'); }
-        .piece.bq { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5 9 26z" fill="black" stroke="black"/><path d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1 2.5-1 2.5-1.5 1.5 0 2.5 0 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z" fill="black" stroke="black"/><path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0" fill="black"/></svg>'); }
-        .piece.bk { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><path d="M22.5 11.63V6M20 8h5" stroke="black" stroke-width="1.5" stroke-linejoin="round"/><path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="black" stroke-linecap="butt" stroke-linejoin="round"/><path d="M12.5 37c5.5 3.5 14.5 3.5 20 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-2.5-7.5-12-10.5-16-4-3 6 6 10.5 6 10.5v7" fill="black"/><path d="M12.5 30c5.5-3 14.5-3 20 0M12.5 33.5c5.5-3 14.5-3 20 0M12.5 37c5.5-3 14.5-3 20 0" stroke="white"/></svg>'); }
-
-        .game-sidebar {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 1rem;
-            border-radius: 10px;
-            min-width: 250px;
-            backdrop-filter: blur(10px);
-        }
-
-        .move-history {
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .move-list {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            margin-top: 1rem;
-        }
-
-        .move-item {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 0.5rem;
-            border-radius: 5px;
-            text-align: center;
-            font-family: monospace;
-        }
-
-        .emote-section {
-            margin-top: 1rem;
-        }
-
-        .emotes {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 0.5rem;
-            flex-wrap: wrap;
-        }
-
-        .emote {
-            background: rgba(255, 255, 255, 0.2);
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            cursor: pointer;
-            font-size: 1.2rem;
-            transition: all 0.2s ease;
-        }
-
-        .emote:hover {
-            background: rgba(255, 255, 255, 0.3);
-            transform: scale(1.1);
-        }
-
-        .modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-        }
-
-        .modal-content {
-            background: white;
-            padding: 2rem;
-            border-radius: 10px;
-            color: #333;
-            min-width: 400px;
-            text-align: center;
-        }
-
-        .modal-content h2 {
-            margin-bottom: 1.5rem;
-            color: #2a5298;
-        }
-
-        .modal-content input {
-            width: 100%;
-            padding: 0.75rem;
-            margin: 0.5rem 0;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-        }
-
-        .modal-content button {
-            width: 100%;
-            padding: 0.75rem;
-            margin: 0.5rem 0;
-            border: none;
-            border-radius: 5px;
-            background: #4CAF50;
-            color: white;
-            cursor: pointer;
-            transition: background 0.3s ease;
-        }
-
-        .modal-content button:hover {
-            background: #45a049;
-        }
-
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 2000;
-        }
-
-        .spinner {
-            font-size: 4rem;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .hidden {
-            display: none !important;
-        }
-
-        @media (max-width: 768px) {
-            .chess-board {
-                grid-template-columns: repeat(8, 40px);
-                grid-template-rows: repeat(8, 40px);
-            }
-            
-            .square {
-                width: 40px;
-                height: 40px;
-            }
-            
-            .piece {
-                width: 35px;
-                height: 35px;
-            }
-            
-            .chess-container {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .game-header {
-                flex-direction: column;
-                gap: 1rem;
-            }
-            
-            .hero-section h1 {
-                font-size: 2.5rem;
-            }
-            
-            .game-options {
-                flex-direction: column;
-                align-items: center;
-            }
-            
-            .game-btn {
-                min-width: 250px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div id="app">
-        <nav class="navbar">
-            <div class="nav-brand">
-                <span>♛ شطرنج برو</span>
+      return (
+        <div
+          key={square}
+          className={`square ${isLight ? 'light' : 'dark'} ${
+            isSelected ? 'selected' : ''
+          } ${isPossibleMove ? 'possible-move' : ''}`}
+          onClick={() => handleSquareClick(square)}
+          style={{
+            width: '60px',
+            height: '60px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            position: 'relative',
+            backgroundColor: isLight ? '#f0d9b5' : '#b58863'
+          }}
+        >
+          {piece && (
+            <div style={{
+              fontSize: '45px',
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              userSelect: 'none'
+            }}>
+              {getPieceSymbol(piece)}
             </div>
-            <div class="nav-links">
-                <button id="loginBtn" class="nav-btn">تسجيل الدخول</button>
-                <button id="registerBtn" class="nav-btn primary">إنشاء حساب</button>
-            </div>
-        </nav>
+          )}
+          {isPossibleMove && !piece && (
+            <div style={{
+              width: '20px',
+              height: '20px',
+              backgroundColor: 'rgba(0,0,0,0.3)',
+              borderRadius: '50%'
+            }} />
+          )}
+        </div>
+      );
+    };
 
-        <main class="main-container">
-            <div class="hero-section">
-                <h1>♚ شطرنج برو</h1>
-                <p>اللعبة الأذكى في العالم العربي</p>
-                
-                <div class="game-options">
-                    <button id="playAiBtn" class="game-btn primary">
-                        ♟ اللعب ضد الكمبيوتر
-                    </button>
-                    <button id="playOnlineBtn" class="game-btn secondary">
-                        🌐 اللعب عبر الإنترنت
-                    </button>
-                    <button id="trainingBtn" class="game-btn accent">
-                        📚 التدريب
-                    </button>
+    const getPieceSymbol = (piece) => {
+      const symbols = {
+        w: { k: '♔', q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
+        b: { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
+      };
+      return symbols[piece.color][piece.type];
+    };
+
+    const squares = [];
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        squares.push(renderSquare(i, j));
+      }
+    }
+
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '20px',
+        padding: '20px',
+        background: '#2c3e50',
+        borderRadius: '15px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.3)'
+      }}>
+        <div style={{
+          display: 'flex',
+          gap: '20px',
+          alignItems: 'center',
+          color: 'white',
+          fontSize: '18px',
+          fontWeight: 'bold'
+        }}>
+          <div style={{
+            padding: '10px 20px',
+            background: '#34495e',
+            borderRadius: '25px'
+          }}>
+            دور: {game.turn() === 'w' ? 'الأبيض' : 'الأسود'}
+          </div>
+          {game.isCheck() && (
+            <div style={{
+              padding: '10px 20px',
+              background: '#e74c3c',
+              borderRadius: '25px',
+              animation: 'pulse 1.5s infinite'
+            }}>
+              كش ملك!
+            </div>
+          )}
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(8, 60px)',
+          gridTemplateRows: 'repeat(8, 60px)',
+          border: '3px solid #34495e',
+          borderRadius: '8px',
+          overflow: 'hidden'
+        }}>
+          {squares}
+        </div>
+
+        <div style={{ display: 'flex', gap: '15px' }}>
+          <button
+            onClick={resetGame}
+            style={{
+              padding: '12px 24px',
+              background: '#3498db',
+              color: 'white',
+              border: 'none',
+              borderRadius: '25px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            لعبة جديدة
+          </button>
+          <button
+            onClick={() => setCurrentView('main')}
+            style={{
+              padding: '12px 24px',
+              background: '#95a5a6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '25px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}
+          >
+            القائمة الرئيسية
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const LoginForm = () => {
+    const [formData, setFormData] = useState({
+      username: '',
+      email: '',
+      password: '',
+      country: 'SA',
+      language: 'ar'
+    });
+
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      if (formData.username && formData.email && formData.password) {
+        handleLogin(formData);
+      }
+    };
+
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        padding: '20px'
+      }}>
+        <div style={{
+          background: 'white',
+          padding: '40px',
+          borderRadius: '20px',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+          width: '100%',
+          maxWidth: '400px'
+        }}>
+          <h2 style={{ textAlign: 'center', marginBottom: '30px', color: '#2c3e50' }}>
+            إنشاء حساب جديد
+          </h2>
+          
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                اسم المستخدم
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData({...formData, username: e.target.value})}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #bdc3c7',
+                  borderRadius: '10px',
+                  fontSize: '16px'
+                }}
+                placeholder="اختر اسمًا فريدًا"
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                البريد الإلكتروني
+              </label>
+              <input
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({...formData, email: e.target.value})}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #bdc3c7',
+                  borderRadius: '10px',
+                  fontSize: '16px'
+                }}
+                placeholder="example@email.com"
+                required
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                كلمة المرور
+              </label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={(e) => setFormData({...formData, password: e.target.value})}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #bdc3c7',
+                  borderRadius: '10px',
+                  fontSize: '16px'
+                }}
+                placeholder="6 أحرف على الأقل"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              style={{
+                padding: '15px',
+                background: 'linear-gradient(135deg, #3498db, #2980b9)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                marginTop: '10px'
+              }}
+            >
+              إنشاء الحساب
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
+  const MainMenu = () => (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '20px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      <div style={{
+        background: 'rgba(255,255,255,0.95)',
+        padding: '40px',
+        borderRadius: '20px',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+        textAlign: 'center',
+        maxWidth: '600px',
+        width: '100%'
+      }}>
+        <h1 style={{ color: '#2c3e50', marginBottom: '10px', fontSize: '2.5em' }}>
+          ♞ Chess Master
+        </h1>
+        <p style={{ color: '#7f8c8d', marginBottom: '40px', fontSize: '1.2em' }}>
+          استمتع بلعبة الشطرنج بتجربة فريدة ومميزة
+        </p>
+
+        {user && (
+          <div style={{
+            background: '#ecf0f1',
+            padding: '20px',
+            borderRadius: '15px',
+            marginBottom: '30px'
+          }}>
+            <h3 style={{ color: '#2c3e50', marginBottom: '10px' }}>
+              مرحباً، {user.username}!
+            </h3>
+            <div style={{ display: 'flex', gap: '20px', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#3498db' }}>
+                  {user.profile.eloRating}
                 </div>
+                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>التصنيف</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#e74c3c' }}>
+                  {user.statistics.gamesWon}
+                </div>
+                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>الفوز</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold', color: '#f39c12' }}>
+                  {user.profile.coins}
+                </div>
+                <div style={{ fontSize: '0.9em', color: '#7f8c8d' }}>العملات</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
+          <div
+            onClick={() => startNewGame('ai', 'white')}
+            style={{
+              background: 'linear-gradient(135deg, #3498db, #2980b9)',
+              color: 'white',
+              padding: '30px 20px',
+              borderRadius: '15px',
+              cursor: 'pointer',
+              transition: 'transform 0.3s ease',
+              textAlign: 'center'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
+            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3em', marginBottom: '10px' }}>🤖</div>
+            <h3>العب ضد الكمبيوتر</h3>
+            <p>تدرب ضد ذكاء اصطناعي</p>
+          </div>
+
+          <div
+            onClick={() => startNewGame('local', 'white')}
+            style={{
+              background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
+              color: 'white',
+              padding: '30px 20px',
+              borderRadius: '15px',
+              cursor: 'pointer',
+              transition: 'transform 0.3s ease',
+              textAlign: 'center'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
+            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3em', marginBottom: '10px' }}>👥</div>
+            <h3>لاعب ضد لاعب</h3>
+            <p>على نفس الجهاز</p>
+          </div>
+
+          <div
+            onClick={() => setCurrentView('training')}
+            style={{
+              background: 'linear-gradient(135deg, #e74c3c, #c0392b)',
+              color: 'white',
+              padding: '30px 20px',
+              borderRadius: '15px',
+              cursor: 'pointer',
+              transition: 'transform 0.3s ease',
+              textAlign: 'center'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
+            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3em', marginBottom: '10px' }}>🎯</div>
+            <h3>جلسات تدريبية</h3>
+            <p>حسن مهاراتك</p>
+          </div>
+
+          <div
+            onClick={() => setCurrentView('profile')}
+            style={{
+              background: 'linear-gradient(135deg, #9b59b6, #8e44ad)',
+              color: 'white',
+              padding: '30px 20px',
+              borderRadius: '15px',
+              cursor: 'pointer',
+              transition: 'transform 0.3s ease',
+              textAlign: 'center'
+            }}
+            onMouseEnter={(e) => e.target.style.transform = 'translateY(-5px)'}
+            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            <div style={{ fontSize: '3em', marginBottom: '10px' }}>👤</div>
+            <h3>الملف الشخصي</h3>
+            <p>إدارة حسابك</p>
+          </div>
+        </div>
+
+        {user && (
+          <button
+            onClick={handleLogout}
+            style={{
+              marginTop: '30px',
+              padding: '12px 30px',
+              background: 'transparent',
+              color: '#e74c3c',
+              border: '2px solid #e74c3c',
+              borderRadius: '25px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.background = '#e74c3c';
+              e.target.style.color = 'white';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'transparent';
+              e.target.style.color = '#e74c3c';
+            }}
+          >
+            تسجيل الخروج
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const TrainingView = () => (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '20px'
+    }}>
+      <div style={{
+        background: 'rgba(255,255,255,0.95)',
+        padding: '40px',
+        borderRadius: '20px',
+        maxWidth: '800px',
+        margin: '0 auto'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+          <h1 style={{ color: '#2c3e50' }}>🎯 برنامج التدريب</h1>
+          <button
+            onClick={() => setCurrentView('main')}
+            style={{
+              padding: '10px 20px',
+              background: '#95a5a6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }}
+          >
+            العودة
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: '20px' }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #3498db, #2980b9)',
+            color: 'white',
+            padding: '25px',
+            borderRadius: '15px',
+            cursor: 'pointer'
+          }}>
+            <h3>🌱 المستوى المبتدئ</h3>
+            <p>تعلم حركات القطع والأساسيات</p>
+            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
+              <div style={{ background: 'white', height: '100%', width: '75%', borderRadius: '5px' }}></div>
+            </div>
+          </div>
+
+          <div style={{
+            background: 'linear-gradient(135deg, #2ecc71, #27ae60)',
+            color: 'white',
+            padding: '25px',
+            borderRadius: '15px',
+            cursor: 'pointer'
+          }}>
+            <h3>⚔️ التكتيكات الأساسية</h3>
+            <p>تعلم الهجمات والدفاعات</p>
+            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
+              <div style={{ background: 'white', height: '100%', width: '40%', borderRadius: '5px' }}></div>
+            </div>
+          </div>
+
+          <div style={{
+            background: 'linear-gradient(135deg, #e74c3c, #c0392b)',
+            color: 'white',
+            padding: '25px',
+            borderRadius: '15px',
+            cursor: 'pointer'
+          }}>
+            <h3>🎯 الاستراتيجيات المتقدمة</h3>
+            <p>تخطيط طويل المدى</p>
+            <div style={{ background: 'rgba(255,255,255,0.3)', height: '10px', borderRadius: '5px', marginTop: '10px' }}>
+              <div style={{ background: 'white', height: '100%', width: '20%', borderRadius: '5px' }}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const ProfileView = () => (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '20px'
+    }}>
+      <div style={{
+        background: 'rgba(255,255,255,0.95)',
+        padding: '40px',
+        borderRadius: '20px',
+        maxWidth: '600px',
+        margin: '0 auto'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+          <h1 style={{ color: '#2c3e50' }}>👤 الملف الشخصي</h1>
+          <button
+            onClick={() => setCurrentView('main')}
+            style={{
+              padding: '10px 20px',
+              background: '#95a5a6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              cursor: 'pointer'
+            }}
+          >
+            العودة
+          </button>
+        </div>
+
+        {user && (
+          <div style={{ display: 'grid', gap: '20px' }}>
+            <div style={{
+              background: '#ecf0f1',
+              padding: '20px',
+              borderRadius: '15px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '3em', marginBottom: '10px' }}>👑</div>
+              <h2 style={{ color: '#2c3e50', marginBottom: '5px' }}>{user.username}</h2>
+              <p style={{ color: '#7f8c8d', marginBottom: '15px' }}>{user.email}</p>
+              <div style={{ background: '#3498db', color: 'white', padding: '5px 15px', borderRadius: '15px', display: 'inline-block' }}>
+                {user.profile.level}
+              </div>
             </div>
 
-            <div id="gameSection" class="game-section hidden">
-                <div class="game-header">
-                    <div class="player-info white">
-                        <span>الأبيض: <span id="whitePlayer">أنت</span></span>
-                        <div class="timer" id="whiteTimer">10:00</div>
-                    </div>
-                    
-                    <div class="game-controls">
-                        <button id="newGameBtn">لعبة جديدة</button>
-                        <button id="resignBtn">استسلام</button>
-                        <button id="hintBtn">تلميح</button>
-                    </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: '15px'
+            }}>
+              <div style={{ background: '#3498db', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.profile.eloRating}</div>
+                <div>التصنيف</div>
+              </div>
+              <div style={{ background: '#2ecc71', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.statistics.gamesPlayed}</div>
+                <div>المباريات</div>
+              </div>
+              <div style={{ background: '#e74c3c', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.statistics.gamesWon}</div>
+                <div>الفوز</div>
+              </div>
+              <div style={{ background: '#f39c12', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.5em', fontWeight: 'bold' }}>{user.profile.coins}</div>
+                <div>العملات</div>
+              </div>
+            </div>
 
-                    <div class="player-info black">
-                        <span>الأسود: <span id="blackPlayer">الكمبيوتر</span></span>
-                        <div class="timer" id="blackTimer">10:00</div>
-                    </div>
+            <div style={{
+              background: '#34495e',
+              color: 'white',
+              padding: '20px',
+              borderRadius: '15px'
+            }}>
+              <h3 style={{ marginBottom: '15px' }}>الإحصائيات</h3>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>معدل الفوز:</span>
+                  <span>
+                    {user.statistics.gamesPlayed > 0 
+                      ? Math.round((user.statistics.gamesWon / user.statistics.gamesPlayed) * 100)
+                      : 0}%
+                  </span>
                 </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>البلد:</span>
+                  <span>{user.profile.country === 'SA' ? 'السعودية' : user.profile.country}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>اللغة:</span>
+                  <span>{user.profile.language === 'ar' ? 'العربية' : user.profile.language}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-                <div class="chess-container">
-                    <div id="chessBoard" class="chess-board"></div>
-                    <div class="game-sidebar">
-                        <div class="move-history">
-                            <h3>سجل النقلات</h3>
-                            <div id="moveList" class="move-list"></div>
-                        </div>
-                        <div class="emote-section">
-                            <h3>التعبيرات</h3>
-                            <div class="emotes">
-                                <button class="emote" data-emote="👍">👍</button>
-                                <button class="emote" data-emote="🤔">🤔</button>
-                                <button class="emote" data-emote="🎉">🎉</button>
-                                <
+  // === التصيير الرئيسي ===
+  if (!user) {
+    return <LoginForm />;
+  }
+
+  switch (currentView) {
+    case 'game':
+      return <ChessBoard />;
+    case 'training':
+      return <TrainingView />;
+    case 'profile':
+      return <ProfileView />;
+    default:
+      return <MainMenu />;
+  }
+};
+
+// إضافة أنماط CSS مدمجة
+const styles = `
+  @keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+  }
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  body {
+    background: #ecf0f1;
+  }
+`;
+
+// إضافة الأنماط إلى head
+const styleSheet = document.createElement("style");
+styleSheet.innerText = styles;
+document.head.appendChild(styleSheet);
+
+export default ChessMaster;
